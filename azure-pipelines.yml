@@ -1,0 +1,619 @@
+# Azure DevOps Pipeline for Meta-repo-architecture
+# This pipeline builds, tests, and deploys all 10 aviation technologies
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+  tags:
+    include:
+      - v*
+
+pr:
+  branches:
+    include:
+      - main
+      - develop
+
+variables:
+  buildConfiguration: 'Release'
+  buildPlatform: 'x64'
+  vmImageName: 'ubuntu-latest'
+  CMAKE_BUILD_TYPE: 'Release'
+
+stages:
+- stage: Build
+  displayName: 'Build Stage'
+  jobs:
+  - job: BuildLinux
+    displayName: 'Build on Linux'
+    pool:
+      vmImage: $(vmImageName)
+    strategy:
+      matrix:
+        GCC_Debug:
+          compiler: gcc
+          buildType: Debug
+        GCC_Release:
+          compiler: gcc
+          buildType: Release
+        Clang_Debug:
+          compiler: clang
+          buildType: Debug
+        Clang_Release:
+          compiler: clang
+          buildType: Release
+    steps:
+    - checkout: self
+      clean: true
+      submodules: recursive
+    
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential git clang clang-tidy valgrind doxygen graphviz
+      displayName: 'Install Dependencies'
+    
+    - script: |
+        echo "Building with $(compiler) in $(buildType) mode"
+        mkdir -p build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=$(buildType) -DCMAKE_CXX_COMPILER=$(compiler)++
+        make -j$(nproc)
+      displayName: 'CMake Build'
+    
+    - publish: $(Build.SourcesDirectory)/build
+      artifact: 'build-$(compiler)-$(buildType)'
+      displayName: 'Publish Build Artifacts'
+
+  - job: BuildWindows
+    displayName: 'Build on Windows'
+    pool:
+      vmImage: 'windows-latest'
+    variables:
+      CMAKE_GENERATOR: 'Visual Studio 16 2019'
+    steps:
+    - checkout: self
+      clean: true
+      submodules: recursive
+    
+    - script: |
+        choco install cmake git
+      displayName: 'Install Dependencies'
+    
+    - script: |
+        echo "Building on Windows"
+        mkdir build
+        cd build
+        cmake .. -G "$(CMAKE_GENERATOR)" -DCMAKE_BUILD_TYPE=$(buildConfiguration)
+        cmake --build . --config $(buildConfiguration) --parallel
+      displayName: 'CMake Build'
+    
+    - publish: $(Build.SourcesDirectory)/build
+      artifact: 'build-windows-$(buildConfiguration)'
+      displayName: 'Publish Build Artifacts'
+
+  - job: BuildMacOS
+    displayName: 'Build on macOS'
+    pool:
+      vmImage: 'macOS-latest'
+    steps:
+    - checkout: self
+      clean: true
+      submodules: recursive
+    
+    - script: |
+        brew update
+        brew install cmake clang-format clang-tidy valgrind doxygen graphviz
+      displayName: 'Install Dependencies'
+    
+    - script: |
+        echo "Building on macOS"
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=$(buildConfiguration) -DCMAKE_CXX_COMPILER=clang++
+        make -j$(sysctl -n hw.ncpu)
+      displayName: 'CMake Build'
+    
+    - publish: $(Build.SourcesDirectory)/build
+      artifact: 'build-macos-$(buildConfiguration)'
+      displayName: 'Publish Build Artifacts'
+
+- stage: Test
+  displayName: 'Test Stage'
+  dependsOn: Build
+  jobs:
+  - job: UnitTests
+    displayName: 'Unit Tests'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      clean: true
+    
+    - download: current
+      artifact: 'build-gcc-Release'
+      displayName: 'Download Build Artifacts'
+    
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential
+      displayName: 'Install Test Dependencies'
+    
+    - script: |
+        cd build
+        ctest --output-on-failure --parallel $(nproc)
+      displayName: 'Run Unit Tests'
+    
+    - task: PublishTestResults@2
+      displayName: 'Publish Test Results'
+      inputs:
+        testResultsFiles: 'build/test-results.xml'
+        testRunTitle: 'Unit Tests'
+        mergeTestResults: true
+
+  - job: IntegrationTests
+    displayName: 'Integration Tests'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      clean: true
+    
+    - download: current
+      artifact: 'build-gcc-Release'
+      displayName: 'Download Build Artifacts'
+    
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential python3
+      displayName: 'Install Test Dependencies'
+    
+    - script: |
+        cd build
+        make integration-tests || true
+        python3 ../scripts/run_integration_tests.py
+      displayName: 'Run Integration Tests'
+    
+    - task: PublishTestResults@2
+      displayName: 'Publish Integration Test Results'
+      inputs:
+        testResultsFiles: 'build/integration-test-results.xml'
+        testRunTitle: 'Integration Tests'
+        mergeTestResults: true
+
+  - job: PerformanceTests
+    displayName: 'Performance Tests'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      clean: true
+    
+    - download: current
+      artifact: 'build-gcc-Release'
+      displayName: 'Download Build Artifacts'
+    
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential python3
+      displayName: 'Install Test Dependencies'
+    
+    - script: |
+        cd build
+        make performance-tests || true
+        python3 ../scripts/analyze_performance.py
+      displayName: 'Run Performance Tests'
+    
+    - publish: $(Build.SourcesDirectory)/build/performance-report.json
+      artifact: 'performance-results'
+      displayName: 'Publish Performance Results'
+
+- stage: Security
+  displayName: 'Security Stage'
+  dependsOn: Build
+  jobs:
+  - job: StaticAnalysis
+    displayName: 'Static Security Analysis'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      clean: true
+    
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential clang-tidy cppcheck
+      displayName: 'Install Analysis Tools'
+    
+    - script: |
+        echo "Running static security analysis"
+        find . -name "*.cpp" -o -name "*.c" | xargs clang-tidy --warnings-as-errors='*' -checks='-*,security*,bugprone-*' || true
+        cppcheck --enable=all --xml --xml-version=2 . 2> cppcheck-report.xml || true
+      displayName: 'Run Static Analysis'
+    
+    - publish: cppcheck-report.xml
+      artifact: 'static-analysis-results'
+      displayName: 'Publish Static Analysis Results'
+
+  - job: DependencyScanning
+    displayName: 'Dependency Scanning'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      clean: true
+    
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y python3 python3-pip
+        pip3 install safety bandit
+      displayName: 'Install Scanning Tools'
+    
+    - script: |
+        echo "Running dependency scanning"
+        safety check --json --output safety-report.json || true
+        bandit -r . -f json -o bandit-report.json || true
+      displayName: 'Run Dependency Scanning'
+    
+    - publish: safety-report.json
+      artifact: 'dependency-scan-results'
+      displayName: 'Publish Dependency Scan Results'
+    
+    - publish: bandit-report.json
+      artifact: 'security-scan-results'
+      displayName: 'Publish Security Scan Results'
+
+  - job: ContainerScanning
+    displayName: 'Container Scanning'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      clean: true
+    
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y docker.io
+        sudo service docker start
+      displayName: 'Install Docker'
+    
+    - script: |
+        echo "Building and scanning Docker images"
+        docker build -t meta-repo-architecture/test .
+        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --format json --output trivy-report.json meta-repo-architecture/test || true
+      displayName: 'Build and Scan Containers'
+    
+    - publish: trivy-report.json
+      artifact: 'container-scan-results'
+      displayName: 'Publish Container Scan Results'
+
+- stage: Performance
+  displayName: 'Performance Stage'
+  dependsOn: Build
+  jobs:
+  - job: Benchmarking
+    displayName: 'Performance Benchmarking'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      clean: true
+    
+    - download: current
+      artifact: 'build-gcc-Release'
+      displayName: 'Download Build Artifacts'
+    
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential python3
+      displayName: 'Install Benchmark Tools'
+    
+    - script: |
+        cd build
+        make benchmarks || true
+        python3 ../scripts/run_benchmarks.py
+      displayName: 'Run Benchmarks'
+    
+    - publish: $(Build.SourcesDirectory)/build/benchmark-results.json
+      artifact: 'benchmark-results'
+      displayName: 'Publish Benchmark Results'
+
+  - job: MemoryAnalysis
+    displayName: 'Memory Analysis'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      clean: true
+    
+    - download: current
+      artifact: 'build-gcc-Release'
+      displayName: 'Download Build Artifacts'
+    
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential valgrind
+      displayName: 'Install Valgrind'
+    
+    - script: |
+        cd build
+        valgrind --leak-check=full --error-exitcode=1 --xml=yes --xml-file=valgrind-report.xml ./neuro_fcc_demo || true
+        valgrind --leak-check=full --error-exitcode=1 --xml=yes --xml-file=vortex-shield-valgrind.xml ./vortex_shield_demo || true
+      displayName: 'Run Memory Analysis'
+    
+    - publish: build/valgrind-report.xml
+      artifact: 'memory-analysis-results'
+      displayName: 'Publish Memory Analysis Results'
+
+- stage: Documentation
+  displayName: 'Documentation Stage'
+  dependsOn: Build
+  jobs:
+  - job: GenerateDocs
+    displayName: 'Generate Documentation'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      clean: true
+    
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential doxygen graphviz plantuml python3
+      displayName: 'Install Documentation Tools'
+    
+    - script: |
+        chmod +x scripts/generate-docs.sh
+        ./scripts/generate-docs.sh
+      displayName: 'Generate Documentation'
+    
+    - publish: $(Build.SourcesDirectory)/docs/build
+      artifact: 'documentation'
+      displayName: 'Publish Documentation'
+
+  - job: DeployDocs
+    displayName: 'Deploy Documentation'
+    pool:
+      vmImage: $(vmImageName)
+    dependsOn: GenerateDocs
+    steps:
+    - download: current
+      artifact: 'documentation'
+      displayName: 'Download Documentation'
+    
+    - task: AzureWebApp@1
+      displayName: 'Deploy to Azure Web App'
+      inputs:
+        azureSubscription: 'Azure Subscription'
+        appType: 'webAppLinux'
+        appName: 'meta-repo-architecture-docs'
+        package: '$(Pipeline.Workspace)/documentation/docs/html'
+        runtimeStack: 'NODE|18-lts'
+      condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+
+- stage: Deploy
+  displayName: 'Deploy Stage'
+  dependsOn: [Test, Security, Performance]
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - job: DeployDocker
+    displayName: 'Deploy Docker Images'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      clean: true
+    
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y docker.io
+        sudo service docker start
+      displayName: 'Install Docker'
+    
+    - script: |
+        echo "Building and pushing Docker images"
+        docker build -t $(containerRegistry)/meta-repo-architecture/neuro-fcc:$(Build.BuildNumber) neuro-fcc/
+        docker build -t $(containerRegistry)/meta-repo-architecture/vortex-shield:$(Build.BuildNumber) vortex-shield/
+        docker build -t $(containerRegistry)/meta-repo-architecture/air-swarm-os:$(Build.BuildNumber) air-swarm-os/
+        
+        echo $(containerRegistryPassword) | docker login -u $(containerRegistryUsername) --password-stdin $(containerRegistry)
+        docker push $(containerRegistry)/meta-repo-architecture/neuro-fcc:$(Build.BuildNumber)
+        docker push $(containerRegistry)/meta-repo-architecture/vortex-shield:$(Build.BuildNumber)
+        docker push $(containerRegistry)/meta-repo-architecture/air-swarm-os:$(Build.BuildNumber)
+      displayName: 'Build and Push Docker Images'
+      env:
+        containerRegistry: $(dockerRegistry)
+        containerRegistryUsername: $(dockerRegistryUsername)
+        containerRegistryPassword: $(dockerRegistryPassword)
+
+  - job: DeployStaging
+    displayName: 'Deploy to Staging'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      clean: true
+    
+    - download: current
+      artifact: 'build-gcc-Release'
+      displayName: 'Download Build Artifacts'
+    
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y openssh-client
+        mkdir -p ~/.ssh
+        echo "$(sshPrivateKey)" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan $(stagingServer) >> ~/.ssh/known_hosts
+      displayName: 'Setup SSH'
+      env:
+        sshPrivateKey: $(sshPrivateKey)
+        stagingServer: $(stagingServer)
+    
+    - script: |
+        scp -r build/* $(stagingUser)@$(stagingServer):/opt/meta-repo-architecture/staging/
+        ssh $(stagingUser)@$(stagingServer) "cd /opt/meta-repo-architecture/staging && ./deploy-staging.sh"
+      displayName: 'Deploy to Staging'
+      env:
+        stagingUser: $(stagingUser)
+        stagingServer: $(stagingServer)
+
+  - job: DeployProduction
+    displayName: 'Deploy to Production'
+    pool:
+      vmImage: $(vmImageName)
+    dependsOn: DeployStaging
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    steps:
+    - checkout: self
+      clean: true
+    
+    - download: current
+      artifact: 'build-gcc-Release'
+      displayName: 'Download Build Artifacts'
+    
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y openssh-client
+        mkdir -p ~/.ssh
+        echo "$(sshPrivateKey)" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan $(productionServer) >> ~/.ssh/known_hosts
+      displayName: 'Setup SSH'
+      env:
+        sshPrivateKey: $(sshPrivateKey)
+        productionServer: $(productionServer)
+    
+    - script: |
+        scp -r build/* $(productionUser)@$(productionServer):/opt/meta-repo-architecture/production/
+        ssh $(productionUser)@$(productionServer) "cd /opt/meta-repo-architecture/production && ./deploy-production.sh"
+      displayName: 'Deploy to Production'
+      env:
+        productionUser: $(productionUser)
+        productionServer: $(productionServer)
+
+- stage: Release
+  displayName: 'Release Stage'
+  dependsOn: [Deploy, Documentation]
+  condition: startsWith(variables['Build.SourceBranch'], 'refs/tags/v')
+  jobs:
+  - job: CreateRelease
+    displayName: 'Create Release'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      clean: true
+    
+    - download: current
+      artifact: 'build-gcc-Release'
+      displayName: 'Download Build Artifacts'
+    
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y curl jq tar
+      displayName: 'Install Release Tools'
+    
+    - script: |
+        VERSION=$(git describe --tags --abbrev=0)
+        DESCRIPTION="Meta-repo-architecture $VERSION - 10 Revolutionary Aviation Technologies"
+        
+        # Create release assets
+        mkdir -p release-assets
+        for tech in air-to-air-mesh neuro-fcc self-adaptive-rotor-blades cold-jet local-gravity-field-navigation predictive-airflow-engine self-healing-avionics-bios vortex-shield air-swarm-os star-nav-core; do
+          if [ -d "$tech" ]; then
+            tar -czf release-assets/$tech-$VERSION.tar.gz $tech/
+          fi
+        done
+        
+        # Create GitHub release
+        curl -X POST \
+          -H "Authorization: token $(githubToken)" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/$(Build.Repository.Name)/releases \
+          -d "{
+            \"tag_name\": \"$VERSION\",
+            \"target_commitish\": \"$(Build.SourceVersion)\",
+            \"name\": \"$VERSION\",
+            \"body\": \"$DESCRIPTION\",
+            \"draft\": false,
+            \"prerelease\": false
+          }"
+      displayName: 'Create GitHub Release'
+      env:
+        githubToken: $(githubToken)
+    
+    - publish: release-assets/
+      artifact: 'release-assets'
+      displayName: 'Publish Release Assets'
+
+- stage: QualityGate
+  displayName: 'Quality Gate'
+  dependsOn: [Test, Security, Performance]
+  jobs:
+  - job: CodeQuality
+    displayName: 'Code Quality Analysis'
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      clean: true
+    
+    - task: SonarCloudPrepare@1
+      displayName: 'Prepare SonarCloud Analysis'
+      inputs:
+        SonarCloud: 'SonarCloud'
+        organization: '$(sonarOrganization)'
+        scannerMode: 'CLI'
+        configMode: 'manual'
+    
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y openjdk-11-jdk
+      displayName: 'Install Java'
+    
+    - task: SonarCloudAnalyze@1
+      displayName: 'Run SonarCloud Analysis'
+    
+    - task: PublishQualityGate@1
+      displayName: 'Publish Quality Gate'
+      inputs:
+        sonarQube: 'SonarCloud'
+        allowBrokenBuilds: true
+
+# Notification stage
+- stage: Notify
+  displayName: 'Notification Stage'
+  dependsOn: [Build, Test, Security, Performance, Deploy, Release]
+  condition: always()
+  jobs:
+  - job: NotifySuccess
+    displayName: 'Notify Success'
+    pool:
+      vmImage: $(vmImageName)
+    condition: succeeded()
+    steps:
+    - script: |
+        curl -X POST \
+          -H "Content-Type: application/json" \
+          -d "{\"text\":\"✅ Pipeline succeeded for $(Build.Repository.Name) ($(Build.SourceBranchName))\"}" \
+          $(slackWebhookUrl)
+      displayName: 'Send Success Notification'
+      env:
+        slackWebhookUrl: $(slackWebhookUrl)
+
+  - job: NotifyFailure
+    displayName: 'Notify Failure'
+    pool:
+      vmImage: $(vmImageName)
+    condition: failed()
+    steps:
+    - script: |
+        curl -X POST \
+          -H "Content-Type: application/json" \
+          -d "{\"text\":\"❌ Pipeline failed for $(Build.Repository.Name) ($(Build.SourceBranchName)). Check $(Build.BuildUri)\"}" \
+          $(slackWebhookUrl)
+      displayName: 'Send Failure Notification'
+      env:
+        slackWebhookUrl: $(slackWebhookUrl)

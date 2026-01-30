@@ -1,0 +1,470 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: meta-repo-network-policy
+  namespace: meta-repo-architecture
+  labels:
+    app: meta-repo-architecture
+    component: security
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from within the namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: meta-repo-architecture
+  # Allow traffic from monitoring namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+  # Allow traffic from ingress controller
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+  # Allow traffic from specific external sources
+  - from:
+    - ipBlock:
+        cidr: 10.0.0.0/8
+    - ipBlock:
+        cidr: 172.16.0.0/12
+    - ipBlock:
+        cidr: 192.168.0.0/16
+  ports:
+  - protocol: TCP
+    port: 8080
+  - protocol: TCP
+    port: 8081
+  - protocol: TCP
+    port: 8082
+  - protocol: TCP
+    port: 8083
+  - protocol: TCP
+    port: 8084
+  - protocol: TCP
+    port: 8085
+  - protocol: TCP
+    port: 8086
+  - protocol: TCP
+    port: 8087
+  - protocol: TCP
+    port: 8088
+  - protocol: TCP
+    port: 8089
+  - protocol: TCP
+    port: 8090
+  - protocol: TCP
+    port: 9090
+  - protocol: TCP
+    port: 3000
+  egress:
+  # Allow traffic to Kubernetes DNS
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow traffic to Kubernetes API
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  # Allow traffic to external services
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 9200
+    - protocol: TCP
+      port: 5432
+    - protocol: TCP
+      port: 6379
+  # Allow traffic to monitoring systems
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 9090
+      endPort: 9095
+  # Allow traffic to time servers
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 123
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: neuro-fcc-network-policy
+  namespace: meta-repo-architecture
+  labels:
+    app: neuro-fcc
+    component: control
+    tier: critical
+spec:
+  podSelector:
+    matchLabels:
+      app: neuro-fcc
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from all technologies (neuro-fcc is central control)
+  - from:
+    - podSelector:
+        matchLabels:
+          app: air-mesh
+    - podSelector:
+        matchLabels:
+          app: adaptive-blades
+    - podSelector:
+        matchLabels:
+          app: vortex-shield
+    - podSelector:
+        matchLabels:
+          app: predictive-cfd
+    - podSelector:
+        matchLabels:
+          app: lgfn
+    - podSelector:
+        matchLabels:
+          app: starnav
+    - podSelector:
+        matchLabels:
+          app: air-swarm
+    - podSelector:
+        matchLabels:
+          app: cold-jet
+    - podSelector:
+        matchLabels:
+          app: bios
+    - podSelector:
+        matchLabels:
+          app: meta-repo-gateway
+  # Allow traffic from monitoring
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    - podSelector:
+        matchLabels:
+          app: grafana
+  ports:
+  - protocol: TCP
+    port: 8082
+  egress:
+  # Allow communication with all technologies
+  - to:
+    - podSelector:
+        matchLabels:
+          app: air-mesh
+    - podSelector:
+        matchLabels:
+          app: adaptive-blades
+    - podSelector:
+        matchLabels:
+          app: vortex-shield
+    - podSelector:
+        matchLabels:
+          app: predictive-cfd
+    - podSelector:
+        matchLabels:
+          app: lgfn
+    - podSelector:
+        matchLabels:
+          app: starnav
+    - podSelector:
+        matchLabels:
+          app: air-swarm
+    - podSelector:
+        matchLabels:
+          app: cold-jet
+    - podSelector:
+        matchLabels:
+          app: bios
+  # Allow external communication
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+      port: 80
+      port: 8080
+      port: 5432
+      port: 6379
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bios-network-policy
+  namespace: meta-repo-architecture
+  labels:
+    app: bios
+    component: system
+    tier: critical
+spec:
+  podSelector:
+    matchLabels:
+      app: bios
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Only allow monitoring and critical systems
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    - podSelector:
+        matchLabels:
+          app: grafana
+    - podSelector:
+        matchLabels:
+          app: neuro-fcc
+    - podSelector:
+        matchLabels:
+          app: meta-repo-gateway
+  ports:
+  - protocol: TCP
+    port: 8087
+  egress:
+  # Allow communication with critical systems only
+  - to:
+    - podSelector:
+        matchLabels:
+          app: neuro-fcc
+    - podSelector:
+        matchLabels:
+          app: vortex-shield
+    - podSelector:
+        matchLabels:
+          app: air-swarm
+  # Allow external communication for updates
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+      port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vortex-shield-network-policy
+  namespace: meta-repo-architecture
+  labels:
+    app: vortex-shield
+    component: safety
+    tier: critical
+spec:
+  podSelector:
+    matchLabels:
+      app: vortex-shield
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from neuro-fcc (control) and adaptive-blades (actuation)
+  - from:
+    - podSelector:
+        matchLabels:
+          app: neuro-fcc
+    - podSelector:
+        matchLabels:
+          app: adaptive-blades
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    - podSelector:
+        matchLabels:
+          app: grafana
+    - podSelector:
+        matchLabels:
+          app: meta-repo-gateway
+  ports:
+  - protocol: TCP
+    port: 8088
+  egress:
+  # Allow communication with neuro-fcc and adaptive-blades
+  - to:
+    - podSelector:
+        matchLabels:
+          app: neuro-fcc
+    - podSelector:
+        matchLabels:
+          app: adaptive-blades
+  # Allow external communication for safety alerts
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+      port: 80
+      port: 25
+      port: 587
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: air-swarm-network-policy
+  namespace: meta-repo-architecture
+  labels:
+    app: air-swarm
+    component: fleet
+    tier: application
+spec:
+  podSelector:
+    matchLabels:
+      app: air-swarm
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from all technologies (air-swarm coordinates fleet)
+  - from:
+    - podSelector:
+        matchLabels:
+          app: neuro-fcc
+    - podSelector:
+        matchLabels:
+          app: starnav
+    - podSelector:
+        matchLabels:
+          app: lgfn
+    - podSelector:
+        matchLabels:
+          app: air-mesh
+    - podSelector:
+        matchLabels:
+          app: vortex-shield
+    - podSelector:
+        matchLabels:
+          app: predictive-cfd
+    - podSelector:
+        matchLabels:
+          app: bios
+    - podSelector:
+        matchLabels:
+          app: meta-repo-gateway
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    - podSelector:
+        matchLabels:
+          app: grafana
+  ports:
+  - protocol: TCP
+    port: 8089
+  egress:
+  # Allow communication with all technologies
+  - to:
+    - podSelector:
+        matchLabels:
+          app: neuro-fcc
+    - podSelector:
+        matchLabels:
+          app: starnav
+    - podSelector:
+        matchLabels:
+          app: lgfn
+    - podSelector:
+        matchLabels:
+          app: air-mesh
+    - podSelector:
+        matchLabels:
+          app: vortex-shield
+    - podSelector:
+        matchLabels:
+          app: predictive-cfd
+    - podSelector:
+        matchLabels:
+          app: bios
+  # Allow blockchain communication
+  - to: []
+    ports:
+    - protocol: TCP
+        port: 443
+        port: 80
+        port: 8443
+        port: 8545
+        port: 30303
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: monitoring-network-policy
+  namespace: meta-repo-architecture
+  labels:
+    app: monitoring
+    component: infrastructure
+spec:
+  podSelector:
+    matchLabels:
+      app: prometheus
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from all technologies for monitoring
+  - from:
+    - podSelector: {}
+  ports:
+  - protocol: TCP
+    port: 9090
+  egress:
+  # Allow scraping all technologies
+  - to:
+    - podSelector: {}
+  ports:
+  - protocol: TCP
+    port: 8080
+    port: 8081
+    port: 8082
+    port: 8083
+    port: 8084
+    port: 8085
+    port: 8086
+    port: 8087
+    port: 8088
+    port: 8089
+    port: 8090
+  # Allow external communication for alerting
+  - to: []
+    ports:
+    - protocol: TCP
+        port: 443
+        port: 25
+        port: 587
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-egress
+  namespace: meta-repo-architecture
+  labels:
+    app: meta-repo-architecture
+    component: security
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-ingress
+  namespace: meta-repo-architecture
+  labels:
+    app: meta-repo-architecture
+    component: security
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  ingress: []

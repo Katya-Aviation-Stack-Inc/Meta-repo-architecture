@@ -1,0 +1,211 @@
+version: '3.8'
+
+services:
+  # Air-to-Air Mesh Network
+  airmesh-demo:
+    build:
+      context: ./air-to-air-mesh
+      dockerfile: Dockerfile
+    container_name: airmesh-demo
+    networks:
+      - aviation-network
+    volumes:
+      - ./air-to-air-mesh:/app
+    command: ./build/airmesh_demo
+    environment:
+      - LOG_LEVEL=INFO
+      - SIMULATION_MODE=true
+
+  # Neuro-FCC
+  neuro-fcc-demo:
+    build:
+      context: ./neuro-fcc
+      dockerfile: Dockerfile
+    container_name: neuro-fcc-demo
+    networks:
+      - aviation-network
+    volumes:
+      - ./neuro-fcc:/app
+    command: ./build/neuro_fcc_demo
+    environment:
+      - LOG_LEVEL=INFO
+      - NEURAL_NETWORK_PATH=/app/models/neural_network.dat
+    depends_on:
+      - airmesh-demo
+
+  # Self-Adaptive Rotor Blades
+  adaptive-rotor-demo:
+    build:
+      context: ./self-adaptive-rotor-blades
+      dockerfile: Dockerfile
+    container_name: adaptive-rotor-demo
+    networks:
+      - aviation-network
+    volumes:
+      - ./self-adaptive-rotor-blades:/app
+    command: ./build/adaptive_rotor_demo
+    environment:
+      - LOG_LEVEL=INFO
+      - SERVO_UPDATE_RATE=1000
+    depends_on:
+      - neuro-fcc-demo
+
+  # Cold-Jet
+  cold-jet-demo:
+    build:
+      context: ./cold-jet
+      dockerfile: Dockerfile
+    container_name: cold-jet-demo
+    networks:
+      - aviation-network
+    volumes:
+      - ./cold-jet:/app
+    command: ./build/cold_jet_demo
+    environment:
+      - LOG_LEVEL=INFO
+      - CRYOGENIC_COOLING_ENABLED=true
+    depends_on:
+      - adaptive-rotor-demo
+
+  # Local Gravity Field Navigation
+  lgfn-demo:
+    build:
+      context: ./local-gravity-field-navigation
+      dockerfile: Dockerfile
+    container_name: lgfn-demo
+    networks:
+      - aviation-network
+    volumes:
+      - ./local-gravity-field-navigation:/app
+    command: ./build/lgfn_demo
+    environment:
+      - LOG_LEVEL=INFO
+      - GRAVIMETER_SENSITIVITY=0.1
+    depends_on:
+      - cold-jet-demo
+
+  # Predictive Airflow Engine
+  predictive-cfd-demo:
+    build:
+      context: ./predictive-airflow-engine
+      dockerfile: Dockerfile
+    container_name: predictive-cfd-demo
+    networks:
+      - aviation-network
+    volumes:
+      - ./predictive-airflow-engine:/app
+    command: ./build/predictive_airflow_demo
+    environment:
+      - LOG_LEVEL=INFO
+      - CFD_PREDICTION_TIME=50
+    depends_on:
+      - lgfn-demo
+
+  # Self-Healing Avionics BIOS
+  self-healing-bios-demo:
+    build:
+      context: ./self-healing-avionics-bios
+      dockerfile: Dockerfile
+    container_name: self-healing-bios-demo
+    networks:
+      - aviation-network
+    volumes:
+      - ./self-healing-avionics-bios:/app
+    command: ./build/self_healing_bios_demo
+    environment:
+      - LOG_LEVEL=INFO
+      - MEMORY_HEALING_ENABLED=true
+    depends_on:
+      - predictive-cfd-demo
+
+  # Vortex Shield
+  vortex-shield-demo:
+    build:
+      context: ./vortex-shield
+      dockerfile: Dockerfile
+    container_name: vortex-shield-demo
+    networks:
+      - aviation-network
+    volumes:
+      - ./vortex-shield:/app
+    command: ./build/vortex_shield_demo
+    environment:
+      - LOG_LEVEL=INFO
+      - VORTEX_DETECTION_SENSITIVITY=0.8
+    depends_on:
+      - self-healing-bios-demo
+
+  # Air Swarm OS
+  air-swarm-os-demo:
+    build:
+      context: ./air-swarm-os
+      dockerfile: Dockerfile
+    container_name: air-swarm-os-demo
+    networks:
+      - aviation-network
+    volumes:
+      - ./air-swarm-os:/app
+    command: ./build/air_swarm_os_demo
+    environment:
+      - LOG_LEVEL=INFO
+      - BLOCKCHAIN_ENABLED=true
+    depends_on:
+      - vortex-shield-demo
+
+  # StarNav Core
+  starnav-demo:
+    build:
+      context: ./star-nav-core
+      dockerfile: Dockerfile
+    container_name: starnav-demo
+    networks:
+      - aviation-network
+    volumes:
+      - ./star-nav-core:/app
+    command: ./build/starnav_demo
+    environment:
+      - LOG_LEVEL=INFO
+      - STAR_CATALOG_PATH=/app/data/stars.dat
+    depends_on:
+      - air-swarm-os-demo
+
+  # Monitoring Service
+  monitoring:
+    image: prom/prometheus:latest
+    container_name: aviation-monitoring
+    networks:
+      - aviation-network
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: aviation-grafana
+    networks:
+      - aviation-network
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+
+networks:
+  aviation-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  prometheus_data:
+  grafana_data:

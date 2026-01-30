@@ -1,0 +1,212 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: air-mesh-service
+  namespace: meta-repo-architecture
+  labels:
+    app: air-mesh
+    component: network
+    tier: application
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8081
+    targetPort: 8081
+    protocol: TCP
+    name: http
+  selector:
+    app: air-mesh
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: neuro-fcc-service
+  namespace: meta-repo-architecture
+  labels:
+    app: neuro-fcc
+    component: control
+    tier: critical
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8082
+    targetPort: 8082
+    protocol: TCP
+    name: http
+  selector:
+    app: neuro-fcc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: adaptive-blades-service
+  namespace: meta-repo-architecture
+  labels:
+    app: adaptive-blades
+    component: rotor
+    tier: application
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8083
+    targetPort: 8083
+    protocol: TCP
+    name: http
+  selector:
+    app: adaptive-blades
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cold-jet-service
+  namespace: meta-repo-architecture
+  labels:
+    app: cold-jet
+    component: propulsion
+    tier: application
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8084
+    targetPort: 8084
+    protocol: TCP
+    name: http
+  selector:
+    app: cold-jet
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lgfn-service
+  namespace: meta-repo-architecture
+  labels:
+    app: lgfn
+    component: navigation
+    tier: application
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8085
+    targetPort: 8085
+    protocol: TCP
+    name: http
+  selector:
+    app: lgfn
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: predictive-cfd-service
+  namespace: meta-repo-architecture
+  labels:
+    app: predictive-cfd
+    component: analysis
+    tier: application
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8086
+    targetPort: 8086
+    protocol: TCP
+    name: http
+  selector:
+    app: predictive-cfd
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bios-service
+  namespace: meta-repo-architecture
+  labels:
+    app: bios
+    component: system
+    tier: critical
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8087
+    targetPort: 8087
+    protocol: TCP
+    name: http
+  selector:
+    app: bios
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vortex-shield-service
+  namespace: meta-repo-architecture
+  labels:
+    app: vortex-shield
+    component: safety
+    tier: critical
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8088
+    targetPort: 8088
+    protocol: TCP
+    name: http
+  selector:
+    app: vortex-shield
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: air-swarm-service
+  namespace: meta-repo-architecture
+  labels:
+    app: air-swarm
+    component: fleet
+    tier: application
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8089
+    targetPort: 8089
+    protocol: TCP
+    name: http
+  selector:
+    app: air-swarm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: starnav-service
+  namespace: meta-repo-architecture
+  labels:
+    app: starnav
+    component: navigation
+    tier: application
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8090
+    targetPort: 8090
+    protocol: TCP
+    name: http
+  selector:
+    app: starnav
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: meta-repo-gateway
+  namespace: meta-repo-architecture
+  labels:
+    app: meta-repo-architecture
+    component: gateway
+    tier: frontend
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  - port: 443
+    targetPort: 443
+    protocol: TCP
+    name: https
+  selector:
+    app: meta-repo-gateway

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: meta-repo-architecture
+  labels:
+    name: meta-repo-architecture
+    project: aviation-technologies
+    environment: production
+  annotations:
+    description: "Meta-repo-architecture - 10 Revolutionary Aviation Technologies"
+    contact: "support@meta-repo-architecture.org"
+    created-by: "meta-repo-architecture-team"

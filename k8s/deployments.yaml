@@ -1,0 +1,814 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: air-mesh-deployment
+  namespace: meta-repo-architecture
+  labels:
+    app: air-mesh
+    component: network
+    tier: application
+    version: v1.0.0
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: air-mesh
+  template:
+    metadata:
+      labels:
+        app: air-mesh
+        component: network
+        tier: application
+        version: v1.0.0
+    spec:
+      containers:
+      - name: air-mesh
+        image: meta-repo-architecture/air-to-air-mesh:latest
+        ports:
+        - containerPort: 8081
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8081"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: log.level
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: meta-repo-secrets
+              key: database.host
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: meta-repo-secrets
+              key: redis.host
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neuro-fcc-deployment
+  namespace: meta-repo-architecture
+  labels:
+    app: neuro-fcc
+    component: control
+    tier: critical
+    version: v1.0.0
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: neuro-fcc
+  template:
+    metadata:
+      labels:
+        app: neuro-fcc
+        component: control
+        tier: critical
+        version: v1.0.0
+    spec:
+      containers:
+      - name: neuro-fcc
+        image: meta-repo-architecture/neuro-fcc:latest
+        ports:
+        - containerPort: 8082
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8082"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: log.level
+        - name: NEURAL_MODEL_PATH
+          value: "/app/models/neural_network.dat"
+        - name: CONTROL_LATENCY_TARGET
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: neuro-fcc.control.latency
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "500m"
+          limits:
+            memory: "256Mi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8082
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8082
+          initialDelaySeconds: 3
+          periodSeconds: 3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adaptive-blades-deployment
+  namespace: meta-repo-architecture
+  labels:
+    app: adaptive-blades
+    component: rotor
+    tier: application
+    version: v1.0.0
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: adaptive-blades
+  template:
+    metadata:
+      labels:
+        app: adaptive-blades
+        component: rotor
+        tier: application
+        version: v1.0.0
+    spec:
+      containers:
+      - name: adaptive-blades
+        image: meta-repo-architecture/self-adaptive-rotor-blades:latest
+        ports:
+        - containerPort: 8083
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8083"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: log.level
+        - name: SERVO_COUNT
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: adaptive-blades.servo.count
+        - name: SERVO_UPDATE_RATE
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: adaptive-blades.servo.rate
+        resources:
+          requests:
+            memory: "96Mi"
+            cpu: "400m"
+          limits:
+            memory: "192Mi"
+            cpu: "800m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8083
+          initialDelaySeconds: 20
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8083
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cold-jet-deployment
+  namespace: meta-repo-architecture
+  labels:
+    app: cold-jet
+    component: propulsion
+    tier: application
+    version: v1.0.0
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cold-jet
+  template:
+    metadata:
+      labels:
+        app: cold-jet
+        component: propulsion
+        tier: application
+        version: v1.0.0
+    spec:
+      containers:
+      - name: cold-jet
+        image: meta-repo-architecture/cold-jet:latest
+        ports:
+        - containerPort: 8084
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8084"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: log.level
+        - name: CRYOGENIC_COOLING_ENABLED
+          value: "true"
+        - name: TEMPERATURE_MONITORING
+          value: "true"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "600m"
+          limits:
+            memory: "256Mi"
+            cpu: "1200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8084
+          initialDelaySeconds: 30
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8084
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lgfn-deployment
+  namespace: meta-repo-architecture
+  labels:
+    app: lgfn
+    component: navigation
+    tier: application
+    version: v1.0.0
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: lgfn
+  template:
+    metadata:
+      labels:
+        app: lgfn
+        component: navigation
+        tier: application
+        version: v1.0.0
+    spec:
+      containers:
+      - name: lgfn
+        image: meta-repo-architecture/local-gravity-field-navigation:latest
+        ports:
+        - containerPort: 8085
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8085"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: log.level
+        - name: GRAVIMETER_SENSITIVITY
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: lgfn.sensitivity
+        - name: UPDATE_RATE
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: lgfn.update.rate
+        resources:
+          requests:
+            memory: "96Mi"
+            cpu: "300m"
+          limits:
+            memory: "192Mi"
+            cpu: "600m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8085
+          initialDelaySeconds: 25
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8085
+          initialDelaySeconds: 8
+          periodSeconds: 5
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: predictive-cfd-deployment
+  namespace: meta-repo-architecture
+  labels:
+    app: predictive-cfd
+    component: analysis
+    tier: application
+    version: v1.0.0
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: predictive-cfd
+  template:
+    metadata:
+      labels:
+        app: predictive-cfd
+        component: analysis
+        tier: application
+        version: v1.0.0
+    spec:
+      containers:
+      - name: predictive-cfd
+        image: meta-repo-architecture/predictive-airflow-engine:latest
+        ports:
+        - containerPort: 8086
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8086"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: log.level
+        - name: PREDICTION_TIME_TARGET
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: predictive-cfd.prediction.time
+        - name: GPU_ACCELERATION
+          value: "true"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "1000m"
+            nvidia.com/gpu: 1
+          limits:
+            memory: "512Mi"
+            cpu: "2000m"
+            nvidia.com/gpu: 1
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8086
+          initialDelaySeconds: 45
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8086
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bios-deployment
+  namespace: meta-repo-architecture
+  labels:
+    app: bios
+    component: system
+    tier: critical
+    version: v1.0.0
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: bios
+  template:
+    metadata:
+      labels:
+        app: bios
+        component: system
+        tier: critical
+        version: v1.0.0
+    spec:
+      containers:
+      - name: bios
+        image: meta-repo-architecture/self-healing-avionics-bios:latest
+        ports:
+        - containerPort: 8087
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8087"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: log.level
+        - name: MEMORY_HEALING_ENABLED
+          value: "true"
+        - name: SYSTEM_MONITORING
+          value: "true"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "200m"
+          limits:
+            memory: "128Mi"
+            cpu: "400m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8087
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8087
+          initialDelaySeconds: 3
+          periodSeconds: 3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vortex-shield-deployment
+  namespace: meta-repo-architecture
+  labels:
+    app: vortex-shield
+    component: safety
+    tier: critical
+    version: v1.0.0
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vortex-shield
+  template:
+    metadata:
+      labels:
+        app: vortex-shield
+        component: safety
+        tier: critical
+        version: v1.0.0
+    spec:
+      containers:
+      - name: vortex-shield
+        image: meta-repo-architecture/vortex-shield:latest
+        ports:
+        - containerPort: 8088
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8088"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: log.level
+        - name: VORTEX_DETECTION_SENSITIVITY
+          value: "0.8"
+        - name: EMERGENCY_MODE_ENABLED
+          value: "true"
+        resources:
+          requests:
+            memory: "96Mi"
+            cpu: "400m"
+          limits:
+            memory: "192Mi"
+            cpu: "800m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8088
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8088
+          initialDelaySeconds: 5
+          periodSeconds: 3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: air-swarm-deployment
+  namespace: meta-repo-architecture
+  labels:
+    app: air-swarm
+    component: fleet
+    tier: application
+    version: v1.0.0
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: air-swarm
+  template:
+    metadata:
+      labels:
+        app: air-swarm
+        component: fleet
+        tier: application
+        version: v1.0.0
+    spec:
+      containers:
+      - name: air-swarm
+        image: meta-repo-architecture/air-swarm-os:latest
+        ports:
+        - containerPort: 8089
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8089"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: log.level
+        - name: BLOCKCHAIN_ENABLED
+          value: "true"
+        - name: CONSENSUS_ALGORITHM
+          value: "raft"
+        resources:
+          requests:
+            memory: "192Mi"
+            cpu: "600m"
+          limits:
+            memory: "384Mi"
+            cpu: "1200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8089
+          initialDelaySeconds: 30
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8089
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: starnav-deployment
+  namespace: meta-repo-architecture
+  labels:
+    app: starnav
+    component: navigation
+    tier: application
+    version: v1.0.0
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: starnav
+  template:
+    metadata:
+      labels:
+        app: starnav
+        component: navigation
+        tier: application
+        version: v1.0.0
+    spec:
+      containers:
+      - name: starnav
+        image: meta-repo-architecture/star-nav-core:latest
+        ports:
+        - containerPort: 8090
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8090"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: log.level
+        - name: STAR_CATALOG_PATH
+          value: "/app/data/stars.dat"
+        - name: CAMERA_CALIBRATION
+          value: "true"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "500m"
+          limits:
+            memory: "256Mi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8090
+          initialDelaySeconds: 40
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8090
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meta-repo-gateway
+  namespace: meta-repo-architecture
+  labels:
+    app: meta-repo-gateway
+    component: gateway
+    tier: frontend
+    version: v1.0.0
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: meta-repo-gateway
+  template:
+    metadata:
+      labels:
+        app: meta-repo-gateway
+        component: gateway
+        tier: frontend
+        version: v1.0.0
+    spec:
+      containers:
+      - name: gateway
+        image: meta-repo-architecture/gateway:latest
+        ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        - containerPort: 443
+          name: https
+          protocol: TCP
+        env:
+        - name: HTTP_PORT
+          value: "80"
+        - name: HTTPS_PORT
+          value: "443"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: log.level
+        - name: SSL_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: meta-repo-config
+              key: security.enabled
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "300m"
+          limits:
+            memory: "256Mi"
+            cpu: "600m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: ssl-certs
+          mountPath: /etc/ssl/certs
+          readOnly: true
+      volumes:
+      - name: ssl-certs
+        secret:
+          secretName: meta-repo-secrets
+          items:
+          - key: ssl.cert
+            path: meta-repo.crt
+          - key: ssl.key
+            path: meta-repo.key

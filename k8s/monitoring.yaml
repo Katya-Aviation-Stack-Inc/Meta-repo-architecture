@@ -1,0 +1,541 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: meta-repo-architecture
+  labels:
+    app: prometheus
+    component: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        cluster: 'meta-repo-architecture'
+        replica: 'prometheus-1'
+    
+    rule_files:
+      - "/etc/prometheus/rules/*.yml"
+    
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+              - alertmanager:9093
+    
+    scrape_configs:
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+      
+      - job_name: 'kubernetes-apiservers'
+        kubernetes_sd_configs:
+          - role: endpoints
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: default;kubernetes;https
+      
+      - job_name: 'kubernetes-nodes'
+        kubernetes_sd_configs:
+          - role: node
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+          - target_label: __address__
+            replacement: kubernetes.default.svc:443
+          - source_labels: [__meta_kubernetes_node_name]
+            regex: (.+)
+            target_label: __metrics_path__
+            replacement: /api/v1/nodes/${1}/proxy/metrics
+      
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+      
+      - job_name: 'meta-repo-technologies'
+        kubernetes_sd_configs:
+          - role: endpoints
+          namespaces:
+            names:
+              - meta-repo-architecture
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: (air-mesh-service|neuro-fcc-service|adaptive-blades-service|cold-jet-service|lgfn-service|predictive-cfd-service|bios-service|vortex-shield-service|air-swarm-service|starnav-service)
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: http
+          - source_labels: [__meta_kubernetes_endpoint_address]
+            action: replace
+            target_label: __address__
+            regex: (.+)
+            replacement: $1:8081
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: __address__
+            regex: air-mesh-service
+            replacement: $1:8081
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: __address__
+            regex: neuro-fcc-service
+            replacement: $1:8082
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: __address__
+            regex: adaptive-blades-service
+            replacement: $1:8083
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: __address__
+            regex: cold-jet-service
+            replacement: $1:8084
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: __address__
+            regex: lgfn-service
+            replacement: $1:8085
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: __address__
+            regex: predictive-cfd-service
+            replacement: $1:8086
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: __address__
+            regex: bios-service
+            replacement: $1:8087
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: __address__
+            regex: vortex-shield-service
+            replacement: $1:8088
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: __address__
+            regex: air-swarm-service
+            replacement: $1:8089
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: __address__
+            regex: starnav-service
+            replacement: $1:8090
+          - source_labels: [__meta_kubernetes_service_name]
+            target_label: technology
+            regex: (.+)-service
+            replacement: $1
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+            replacement: meta-repo-architecture
+  
+  alert_rules.yml: |
+    groups:
+    - name: meta-repo-architecture.rules
+      rules:
+      - alert: TechnologyDown
+        expr: up{job="meta-repo-technologies"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: availability
+        annotations:
+          summary: "Technology {{ $labels.technology }} is down"
+          description: "Technology {{ $labels.technology }} has been down for more than 1 minute."
+      
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="meta-repo-technologies"}[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "High latency in {{ $labels.technology }}"
+          description: "95th percentile latency is {{ $value }}s for {{ $labels.technology }}"
+      
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{job="meta-repo-technologies",status=~"5.."}[5m]) / rate(http_requests_total{job="meta-repo-technologies"}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: reliability
+        annotations:
+          summary: "High error rate in {{ $labels.technology }}"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.technology }}"
+      
+      - alert: HighMemoryUsage
+        expr: container_memory_usage_bytes{job="meta-repo-technologies"} / container_spec_memory_limit_bytes{job="meta-repo-technologies"} > 0.9
+        for: 10m
+        labels:
+          severity: warning
+          component: resource
+        annotations:
+          summary: "High memory usage in {{ $labels.technology }}"
+          description: "Memory usage is {{ $value | humanizePercentage }} for {{ $labels.technology }}"
+      
+      - alert: HighCPUUsage
+        expr: rate(container_cpu_usage_seconds_total{job="meta-repo-technologies"}[5m]) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          component: resource
+        annotations:
+          summary: "High CPU usage in {{ $labels.technology }}"
+          description: "CPU usage is {{ $value | humanizePercentage }} for {{ $labels.technology }}"
+      
+      - alert: PodRestartHigh
+        expr: rate(kube_pod_container_status_restarts_total{job="meta-repo-technologies"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: stability
+        annotations:
+          summary: "Pod restarts for {{ $labels.technology }}"
+          description: "Pod {{ $labels.pod }} for {{ $labels.technology }} is restarting frequently"
+      
+      - alert: CriticalTechnologyDown
+        expr: up{job="meta-repo-technologies", technology=~"neuro-fcc|bios|vortex-shield"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          component: safety
+        annotations:
+          summary: "Critical technology {{ $labels.technology }} is down"
+          description: "Critical safety technology {{ $labels.technology }} is down. Immediate attention required."
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: meta-repo-architecture
+  labels:
+    app: prometheus
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+        component: monitoring
+    spec:
+      serviceAccountName: prometheus
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.40.0
+        ports:
+        - containerPort: 9090
+          name: http
+          protocol: TCP
+        args:
+          - '--config.file=/etc/prometheus/prometheus.yml'
+          - '--storage.tsdb.path=/prometheus/'
+          - '--web.console.libraries=/etc/prometheus/console_libraries'
+          - '--web.console.templates=/etc/prometheus/consoles'
+          - '--storage.tsdb.retention.time=30d'
+          - '--web.enable-lifecycle'
+          - '--web.enable-admin-api'
+        volumeMounts:
+        - name: prometheus-config
+          mountPath: /etc/prometheus/
+        - name: prometheus-storage
+          mountPath: /prometheus/
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: 9090
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: 9090
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: prometheus-config
+        configMap:
+          name: prometheus-config
+      - name: prometheus-storage
+        persistentVolumeClaim:
+          claimName: prometheus-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: meta-repo-architecture
+  labels:
+    app: prometheus
+    component: monitoring
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9090
+    targetPort: 9090
+    name: http
+    protocol: TCP
+  selector:
+    app: prometheus
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-pvc
+  namespace: meta-repo-architecture
+  labels:
+    app: prometheus
+    component: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: meta-repo-architecture
+  labels:
+    app: prometheus
+    component: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+  labels:
+    app: prometheus
+    component: monitoring
+rules:
+- apiGroups: [""]
+  resources:
+  - nodes
+  - nodes/metrics
+  - services
+  - endpoints
+  - pods
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources:
+  - configmaps
+  verbs: ["get"]
+- nonResourceURLs: ["/metrics"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+  labels:
+    app: prometheus
+    component: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: meta-repo-architecture
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: meta-repo-architecture
+  labels:
+    app: grafana
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+        component: monitoring
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:9.3.0
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          valueFrom:
+            secretKeyRef:
+              name: meta-repo-secrets
+              key: grafana.password
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: meta-repo-secrets
+              key: grafana.password
+        - name: GF_INSTALL_PLUGINS
+          value: "grafana-piechart-panel,grafana-worldmap-panel,grafana-clock-panel,grafana-simple-json-datasource"
+        - name: GF_SECURITY_ALLOW_EMBEDDING
+          value: "true"
+        - name: GF_AUTH_ANONYMOUS_ENABLED
+          value: "false"
+        - name: GF_SERVER_ROOT_URL
+          value: "https://monitoring.meta-repo-architecture.org"
+        volumeMounts:
+        - name: grafana-storage
+          mountPath: /var/lib/grafana
+        - name: grafana-config
+          mountPath: /etc/grafana/provisioning
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 472
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: grafana-storage
+        persistentVolumeClaim:
+          claimName: grafana-pvc
+      - name: grafana-config
+        configMap:
+          name: grafana-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: meta-repo-architecture
+  labels:
+    app: grafana
+    component: monitoring
+spec:
+  type: ClusterIP
+  ports:
+  - port: 3000
+    targetPort: 3000
+    name: http
+    protocol: TCP
+  selector:
+    app: grafana
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-pvc
+  namespace: meta-repo-architecture
+  labels:
+    app: grafana
+    component: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-config
+  namespace: meta-repo-architecture
+  labels:
+    app: grafana
+    component: monitoring
+data:
+  datasources.yml: |
+    apiVersion: 1
+    datasources:
+    - name: Prometheus
+      type: prometheus
+      access: proxy
+      url: http://prometheus:9090
+      isDefault: true
+      editable: true
+      jsonData:
+        timeInterval: "15s"
+        queryTimeout: "60s"
+        httpMethod: "POST"
+  dashboards.yml: |
+    apiVersion: 1
+    providers:
+    - name: 'default'
+      orgId: 1
+      folder: ''
+      type: file
+      disableDeletion: false
+      updateIntervalSeconds: 10
+      allowUiUpdates: true
+      options:
+        path: /var/lib/grafana/dashboards/default

@@ -1,0 +1,446 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: meta-repo-service-account
+  namespace: meta-repo-architecture
+  labels:
+    app: meta-repo-architecture
+    component: rbac
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: meta-repo-architecture
+  name: meta-repo-role
+  labels:
+    app: meta-repo-architecture
+    component: rbac
+rules:
+# Core Kubernetes resources
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+# Applications resources
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets"]
+  verbs: ["get", "list", "watch"]
+# Monitoring resources
+- apiGroups: ["extensions", "networking.k8s.io"]
+  resources: ["ingresses", "networkpolicies"]
+  verbs: ["get", "list", "watch"]
+# Autoscaling resources
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch"]
+# Batch resources
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch"]
+# Storage resources
+- apiGroups: ["storage.k8s.io"]
+  resources: ["persistentvolumes", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch"]
+# Metrics resources
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list"]
+# Custom resources for aviation technologies
+- apiGroups: ["aviation.meta-repo.org"]
+  resources: ["*"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: meta-repo-role-binding
+  namespace: meta-repo-architecture
+  labels:
+    app: meta-repo-architecture
+    component: rbac
+subjects:
+- kind: ServiceAccount
+  name: meta-repo-service-account
+  namespace: meta-repo-architecture
+roleRef:
+  kind: Role
+  name: meta-repo-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: meta-repo-cluster-role
+  labels:
+    app: meta-repo-architecture
+    component: rbac
+rules:
+# Cluster-wide resources
+- apiGroups: [""]
+  resources: ["nodes", "namespaces", "persistentvolumes"]
+  verbs: ["get", "list", "watch"]
+# Cluster-wide networking
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies", "ingressclasses"]
+  verbs: ["get", "list", "watch"]
+# Cluster-wide storage
+- apiGroups: ["storage.k8s.io"]
+  resources: ["storageclasses"]
+  verbs: ["get", "list", "watch"]
+# Cluster-wide metrics
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["nodes", "pods"]
+  verbs: ["get", "list"]
+# Custom resources
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["get", "list", "watch"]
+# Aviation technology CRDs
+- apiGroups: ["aviation.meta-repo.org"]
+  resources: ["*"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: meta-repo-cluster-role-binding
+  labels:
+    app: meta-repo-architecture
+    component: rbac
+subjects:
+- kind: ServiceAccount
+  name: meta-repo-service-account
+  namespace: meta-repo-architecture
+roleRef:
+  kind: ClusterRole
+  name: meta-repo-cluster-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# Critical Systems RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: neuro-fcc-service-account
+  namespace: meta-repo-architecture
+  labels:
+    app: neuro-fcc
+    component: control
+    tier: critical
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: meta-repo-architecture
+  name: neuro-fcc-role
+  labels:
+    app: neuro-fcc
+    component: control
+    tier: critical
+rules:
+# Enhanced permissions for critical control system
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["extensions", "networking.k8s.io"]
+  resources: ["ingresses", "networkpolicies"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["aviation.meta-repo.org"]
+  resources: ["flightcontrols", "safetysystems"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  namespace: meta-repo-architecture
+  name: neuro-fcc-role-binding
+  labels:
+    app: neuro-fcc
+    component: control
+    tier: critical
+subjects:
+- kind: ServiceAccount
+  name: neuro-fcc-service-account
+  namespace: meta-repo-architecture
+roleRef:
+  kind: Role
+  name: neuro-fcc-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# Safety Systems RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vortex-shield-service-account
+  namespace: meta-repo-architecture
+  labels:
+    app: vortex-shield
+    component: safety
+    tier: critical
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: meta-repo-architecture
+  name: vortex-shield-role
+  labels:
+    app: vortex-shield
+    component: safety
+    tier: critical
+rules:
+# Enhanced permissions for safety system
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["extensions", "networking.k8s.io"]
+  resources: ["ingresses", "networkpolicies"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["aviation.meta-repo.org"]
+  resources: ["safetysystems", "emergencyprocedures"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  namespace: meta-repo-architecture
+  name: vortex-shield-role-binding
+  labels:
+    app: vortex-shield
+    component: safety
+    tier: critical
+subjects:
+- kind: ServiceAccount
+  name: vortex-shield-service-account
+  namespace: meta-repo-architecture
+roleRef:
+  kind: Role
+  name: vortex-shield-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# System Health RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bios-service-account
+  namespace: meta-repo-architecture
+  labels:
+    app: bios
+    component: system
+    tier: critical
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: meta-repo-architecture
+  name: bios-role
+  labels:
+    app: bios
+    component: system
+    tier: critical
+rules:
+# System health monitoring permissions
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "configmaps", "secrets", "nodes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["extensions", "networking.k8s.io"]
+  resources: ["ingresses", "networkpolicies"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["aviation.meta-repo.org"]
+  resources: ["systemhealth", "selfhealing"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  namespace: meta-repo-architecture
+  name: bios-role-binding
+  labels:
+    app: bios
+    component: system
+    tier: critical
+subjects:
+- kind: ServiceAccount
+  name: bios-service-account
+  namespace: meta-repo-architecture
+roleRef:
+  kind: Role
+  name: bios-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# Fleet Management RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: air-swarm-service-account
+  namespace: meta-repo-architecture
+  labels:
+    app: air-swarm
+    component: fleet
+    tier: application
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: meta-repo-architecture
+  name: air-swarm-role
+  labels:
+    app: air-swarm
+    component: fleet
+    tier: application
+rules:
+# Fleet management permissions
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["extensions", "networking.k8s.io"]
+  resources: ["ingresses", "networkpolicies"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["aviation.meta-repo.org"]
+  resources: ["fleetmanagement", "blockchain", "consensus"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  namespace: meta-repo-architecture
+  name: air-swarm-role-binding
+  labels:
+    app: air-swarm
+    component: fleet
+    tier: application
+subjects:
+- kind: ServiceAccount
+  name: air-swarm-service-account
+  namespace: meta-repo-architecture
+roleRef:
+  kind: Role
+  name: air-swarm-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# Monitoring RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: monitoring-service-account
+  namespace: meta-repo-architecture
+  labels:
+    app: monitoring
+    component: infrastructure
+    tier: infrastructure
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: meta-repo-architecture
+  name: monitoring-role
+  labels:
+    app: monitoring
+    component: infrastructure
+    tier: infrastructure
+rules:
+# Monitoring permissions
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "configmaps", "secrets", "nodes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["extensions", "networking.k8s.io"]
+  resources: ["ingresses", "networkpolicies"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list"]
+- apiGroups: ["aviation.meta-repo.org"]
+  resources: ["metrics", "alerts", "dashboards"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  namespace: meta-repo-architecture
+  name: monitoring-role-binding
+  labels:
+    app: monitoring
+    component: infrastructure
+    tier: infrastructure
+subjects:
+- kind: ServiceAccount
+  name: monitoring-service-account
+  namespace: meta-repo-architecture
+roleRef:
+  kind: Role
+  name: monitoring-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# Admin RBAC for emergency operations
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: meta-repo-admin-service-account
+  namespace: meta-repo-architecture
+  labels:
+    app: meta-repo-architecture
+    component: admin
+    tier: emergency
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: meta-repo-architecture
+  name: meta-repo-admin-role
+  labels:
+    app: meta-repo-architecture
+    component: admin
+    tier: emergency
+rules:
+# Full admin permissions within namespace
+- apiGroups: [""]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: ["apps"]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: ["extensions", "networking.k8s.io"]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: ["autoscaling"]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: ["batch"]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: ["storage.k8s.io"]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: ["aviation.meta-repo.org"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  namespace: meta-repo-architecture
+  name: meta-repo-admin-role-binding
+  labels:
+    app: meta-repo-architecture
+    component: admin
+    tier: emergency
+subjects:
+- kind: ServiceAccount
+  name: meta-repo-admin-service-account
+  namespace: meta-repo-architecture
+roleRef:
+  kind: Role
+  name: meta-repo-admin-role
+  apiGroup: rbac.authorization.k8s.io

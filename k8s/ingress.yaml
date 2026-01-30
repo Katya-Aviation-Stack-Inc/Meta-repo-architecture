@@ -1,0 +1,192 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: meta-repo-ingress
+  namespace: meta-repo-architecture
+  labels:
+    app: meta-repo-architecture
+    component: ingress
+    tier: frontend
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; media-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"
+spec:
+  tls:
+  - hosts:
+    - meta-repo-architecture.org
+    - www.meta-repo-architecture.org
+    - api.meta-repo-architecture.org
+    secretName: meta-repo-tls
+  rules:
+  - host: meta-repo-architecture.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: meta-repo-gateway
+            port:
+              number: 80
+  - host: www.meta-repo-architecture.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: meta-repo-gateway
+            port:
+              number: 80
+  - host: api.meta-repo-architecture.org
+    http:
+      paths:
+      - path: /air-mesh(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: air-mesh-service
+            port:
+              number: 8081
+      - path: /neuro-fcc(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: neuro-fcc-service
+            port:
+              number: 8082
+      - path: /adaptive-blades(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: adaptive-blades-service
+            port:
+              number: 8083
+      - path: /cold-jet(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: cold-jet-service
+            port:
+              number: 8084
+      - path: /lgfn(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: lgfn-service
+            port:
+              number: 8085
+      - path: /predictive-cfd(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: predictive-cfd-service
+            port:
+              number: 8086
+      - path: /bios(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: bios-service
+            port:
+              number: 8087
+      - path: /vortex-shield(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: vortex-shield-service
+            port:
+              number: 8088
+      - path: /air-swarm(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: air-swarm-service
+            port:
+              number: 8089
+      - path: /starnav(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: starnav-service
+            port:
+              number: 8090
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: meta-repo-monitoring-ingress
+  namespace: meta-repo-architecture
+  labels:
+    app: meta-repo-architecture
+    component: monitoring
+    tier: infrastructure
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/auth-type: "basic"
+    nginx.ingress.kubernetes.io/auth-secret: "meta-repo-monitoring-auth"
+    nginx.ingress.kubernetes.io/auth-realm: "Meta-repo Monitoring"
+spec:
+  tls:
+  - hosts:
+    - monitoring.meta-repo-architecture.org
+    secretName: meta-repo-monitoring-tls
+  rules:
+  - host: monitoring.meta-repo-architecture.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana-service
+            port:
+              number: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: meta-repo-docs-ingress
+  namespace: meta-repo-architecture
+  labels:
+    app: meta-repo-architecture
+    component: documentation
+    tier: frontend
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/cache-control: "public, max-age=3600"
+    nginx.ingress.kubernetes.io/gzip: "true"
+    nginx.ingress.kubernetes.io/gzip-types: "text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript"
+spec:
+  tls:
+  - hosts:
+    - docs.meta-repo-architecture.org
+    secretName: meta-repo-docs-tls
+  rules:
+  - host: docs.meta-repo-architecture.org
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: docs-service
+            port:
+              number: 80

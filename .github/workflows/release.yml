@@ -1,0 +1,203 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      release_id: ${{ steps.create_release.outputs.id }}
+    steps:
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+
+  build-and-upload:
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        technology: [
+          "air-to-air-mesh",
+          "neuro-fcc",
+          "self-adaptive-rotor-blades",
+          "cold-jet",
+          "local-gravity-field-navigation",
+          "predictive-airflow-engine",
+          "self-healing-avionics-bios",
+          "vortex-shield",
+          "air-swarm-os",
+          "star-nav-core"
+        ]
+        include:
+          - os: ubuntu-latest
+            compiler: gcc
+            executable_suffix: ""
+            archive_ext: tar.gz
+          - os: windows-latest
+            compiler: msvc
+            executable_suffix: .exe
+            archive_ext: zip
+          - os: macos-latest
+            compiler: clang
+            executable_suffix: ""
+            archive_ext: tar.gz
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential libpthread-stubs0-dev
+
+    - name: Install dependencies (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install cmake
+
+    - name: Install dependencies (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        choco install cmake
+
+    - name: Configure CMake
+      working-directory: ${{ matrix.technology }}
+      run: |
+        mkdir build
+        cd build
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          cmake .. -DCMAKE_BUILD_TYPE=Release -G "Visual Studio 16 2019"
+        else
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}++
+        fi
+
+    - name: Build
+      working-directory: ${{ matrix.technology }}/build
+      run: |
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          cmake --build . --config Release
+        else
+          make -j$(nproc)
+        fi
+
+    - name: Create archive
+      working-directory: ${{ matrix.technology }}/build
+      run: |
+        mkdir -p ${{ matrix.technology }}-release
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          cp Release/*${{ matrix.executable_suffix }} ${{ matrix.technology }}-release/ || true
+        else
+          cp *${{ matrix.executable_suffix }} ${{ matrix.technology }}-release/ || true
+        fi
+        cp -r ../src ${{ matrix.technology }}-release/ || true
+        cp ../README.md ${{ matrix.technology }}-release/ || true
+        cp ../CMakeLists.txt ${{ matrix.technology }}-release/ || true
+        
+        if [ "${{ matrix.archive_ext }}" = "zip" ]; then
+          7z a ${{ matrix.technology }}-${{ matrix.os }}.${{ matrix.archive_ext }} ${{ matrix.technology }}-release/
+        else
+          tar -czf ${{ matrix.technology }}-${{ matrix.os }}.${{ matrix.archive_ext }} ${{ matrix.technology }}-release/
+        fi
+
+    - name: Upload Release Asset
+      id: upload-release-asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./${{ matrix.technology }}/build/${{ matrix.technology }}-${{ matrix.os }}.${{ matrix.archive_ext }}
+        asset_name: ${{ matrix.technology }}-${{ matrix.os }}.${{ matrix.archive_ext }}
+        asset_content_type: application/octet-stream
+
+  build-docker-images:
+    needs: create-release
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        technology: [
+          "neuro-fcc",
+          "vortex-shield",
+          "predictive-airflow-engine",
+          "air-swarm-os",
+          "star-nav-core"
+        ]
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: ${{ matrix.technology }}
+        push: true
+        tags: |
+          meta-repo-architecture/${{ matrix.technology }}:latest
+          meta-repo-architecture/${{ matrix.technology }}:${{ github.ref_name }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  generate-docs:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install documentation tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y doxygen graphviz
+
+    - name: Generate documentation
+      run: |
+        if [ -f "Doxyfile" ]; then
+          doxygen Doxyfile
+        fi
+
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      if: ${{ github.ref == 'refs/heads/main' }}
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs/html
+
+  notify-release:
+    needs: [create-release, build-and-upload, build-docker-images]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+    - name: Notify release success
+      if: needs.build-and-upload.result == 'success'
+      run: |
+        echo "✅ Release ${{ github.ref }} created successfully!"
+        echo "📦 All binaries uploaded to GitHub releases"
+        echo "🐳 Docker images pushed to Docker Hub"
+
+    - name: Notify release failure
+      if: needs.build-and-upload.result == 'failure'
+      run: |
+        echo "❌ Release ${{ github.ref }} failed!"
+        exit 1

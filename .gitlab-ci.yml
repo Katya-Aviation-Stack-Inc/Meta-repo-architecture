@@ -1,0 +1,534 @@
+# GitLab CI/CD Pipeline for Meta-repo-architecture
+# This pipeline builds, tests, and deploys all 10 aviation technologies
+
+stages:
+  - build
+  - test
+  - security
+  - performance
+  - docs
+  - deploy
+  - release
+
+variables:
+  BUILD_TYPE: Release
+  CMAKE_BUILD_TYPE: Release
+  GIT_SUBMODULE_STRATEGY: recursive
+
+# Build stage - Build all technologies
+build:linux:
+  stage: build
+  image: ubuntu:22.04
+  tags:
+    - docker
+  parallel:
+    matrix:
+      - COMPILER: [gcc, clang]
+        BUILD_TYPE: [Debug, Release]
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y cmake build-essential git clang clang-tidy valgrind doxygen graphviz
+  script:
+    - echo "Building with $COMPILER in $BUILD_TYPE mode"
+    - mkdir -p build
+    - cd build
+    - cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_COMPILER=$COMPILER++
+    - make -j$(nproc)
+  artifacts:
+    paths:
+      - build/
+    expire_in: 1 hour
+  only:
+    - main
+    - develop
+    - merge_requests
+
+build:windows:
+  stage: build
+  tags:
+    - windows
+    - shell
+  variables:
+    CMAKE_GENERATOR: "Visual Studio 16 2019"
+  before_script:
+    - echo "Setting up Windows build environment"
+    - call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+  script:
+    - echo "Building on Windows"
+    - mkdir build
+    - cd build
+    - cmake .. -G "$CMAKE_GENERATOR" -DCMAKE_BUILD_TYPE=%BUILD_TYPE%
+    - cmake --build . --config %BUILD_TYPE% --parallel
+  artifacts:
+    paths:
+      - build/
+    expire_in: 1 hour
+  only:
+    - main
+    - develop
+    - merge_requests
+
+build:macos:
+  stage: build
+  tags:
+    - macos
+    - shell
+  variables:
+    COMPILER: clang
+  before_script:
+    - echo "Setting up macOS build environment"
+    - brew update
+    - brew install cmake clang-format clang-tidy valgrind doxygen graphviz
+  script:
+    - echo "Building on macOS with $COMPILER"
+    - mkdir build
+    - cd build
+    - cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_CXX_COMPILER=$COMPILER++
+    - make -j$(sysctl -n hw.ncpu)
+  artifacts:
+    paths:
+      - build/
+    expire_in: 1 hour
+  only:
+    - main
+    - develop
+    - merge_requests
+
+# Test stage - Run all tests
+test:unit:
+  stage: test
+  image: ubuntu:22.04
+  dependencies:
+    - build:linux
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y cmake build-essential
+  script:
+    - echo "Running unit tests"
+    - cd build
+    - ctest --output-on-failure --parallel $(nproc)
+  artifacts:
+    reports:
+      junit: build/test-results.xml
+    paths:
+      - build/test-results/
+    expire_in: 1 day
+  only:
+    - main
+    - develop
+    - merge_requests
+
+test:integration:
+  stage: test
+  image: ubuntu:22.04
+  dependencies:
+    - build:linux
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y cmake build-essential
+  script:
+    - echo "Running integration tests"
+    - cd build
+    - make integration-tests || true
+    - ./run_integration_tests.sh || true
+  artifacts:
+    reports:
+      junit: build/integration-test-results.xml
+    paths:
+      - build/integration-test-results/
+    expire_in: 1 day
+  only:
+    - main
+    - develop
+    - merge_requests
+
+test:performance:
+  stage: test
+  image: ubuntu:22.04
+  dependencies:
+    - build:linux
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y cmake build-essential python3
+  script:
+    - echo "Running performance tests"
+    - cd build
+    - make performance-tests || true
+    - python3 ../scripts/analyze_performance.py
+  artifacts:
+    reports:
+      performance: build/performance-report.json
+    paths:
+      - build/performance-report.json
+    expire_in: 1 day
+  only:
+    - main
+    - develop
+    - merge_requests
+
+# Security stage - Security scanning and analysis
+security:static_analysis:
+  stage: security
+  image: ubuntu:22.04
+  dependencies:
+    - build:linux
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y cmake build-essential clang-tidy cppcheck
+  script:
+    - echo "Running static security analysis"
+    - find . -name "*.cpp" -o -name "*.c" | xargs clang-tidy --warnings-as-errors='*' -checks='-*,security*,bugprone-*' || true
+    - cppcheck --enable=all --xml --xml-version=2 . 2> cppcheck-report.xml || true
+  artifacts:
+    reports:
+      sast: gl-sast-report.json
+    paths:
+      - cppcheck-report.xml
+      - gl-sast-report.json
+    expire_in: 1 day
+  only:
+    - main
+    - develop
+    - merge_requests
+
+security:dependency_scan:
+  stage: security
+  image: ubuntu:22.04
+  script:
+    - echo "Running dependency scanning"
+    - gem install bundler
+    - bundle install
+    - bundle exec bundler-audit --update
+  artifacts:
+    reports:
+      dependency_scanning: gl-dependency-scanning-report.json
+    paths:
+      - gl-dependency-scanning-report.json
+    expire_in: 1 day
+  only:
+    - main
+    - develop
+    - merge_requests
+
+security:container_scan:
+  stage: security
+  image: ubuntu:22.04
+  script:
+    - echo "Running container security scanning"
+    - docker build -t meta-repo-architecture/test .
+    - docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --format json --output trivy-report.json meta-repo-architecture/test
+  artifacts:
+    reports:
+      container_scanning: gl-container-scanning-report.json
+    paths:
+      - trivy-report.json
+    expire_in: 1 day
+  only:
+    - main
+    - develop
+    - merge_requests
+
+# Performance stage - Detailed performance analysis
+performance:benchmark:
+  stage: performance
+  image: ubuntu:22.04
+  dependencies:
+    - build:linux
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y cmake build-essential python3
+  script:
+    - echo "Running detailed performance benchmarks"
+    - cd build
+    - make benchmarks || true
+    - python3 ../scripts/run_benchmarks.py
+  artifacts:
+    reports:
+      performance: build/benchmark-results.json
+    paths:
+      - build/benchmark-results.json
+    expire_in: 1 week
+  only:
+    - main
+    - develop
+
+performance:memory:
+  stage: performance
+  image: ubuntu:22.04
+  dependencies:
+    - build:linux
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y cmake build-essential valgrind
+  script:
+    - echo "Running memory analysis with Valgrind"
+    - cd build
+    - valgrind --leak-check=full --error-exitcode=1 --xml=yes --xml-file=valgrind-report.xml ./neuro_fcc_demo || true
+    - valgrind --leak-check=full --error-exitcode=1 --xml=yes --xml-file=vortex-shield-valgrind.xml ./vortex_shield_demo || true
+  artifacts:
+    paths:
+      - build/valgrind-report.xml
+      - build/vortex-shield-valgrind.xml
+    expire_in: 1 day
+  only:
+    - main
+    - develop
+
+# Documentation stage - Generate and test documentation
+docs:generate:
+  stage: docs
+  image: ubuntu:22.04
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y cmake build-essential doxygen graphviz plantuml python3
+  script:
+    - echo "Generating documentation"
+    - chmod +x scripts/generate-docs.sh
+    - ./scripts/generate-docs.sh
+  artifacts:
+    paths:
+      - docs/build/
+      - docs/html/
+    expire_in: 1 week
+  only:
+    - main
+    - develop
+    - merge_requests
+
+docs:deploy:
+  stage: docs
+  image: alpine:latest
+  dependencies:
+    - docs:generate
+  before_script:
+    - apk add --no-cache rsync openssh-client
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan $DEPLOY_SERVER >> ~/.ssh/known_hosts
+  script:
+    - echo "Deploying documentation"
+    - rsync -avz --delete docs/html/ $DEPLOY_USER@$DEPLOY_SERVER:/var/www/meta-repo-architecture/docs/
+  environment:
+    name: production
+    url: https://docs.meta-repo-architecture.org
+  only:
+    - main
+
+# Deploy stage - Deploy to various environments
+deploy:docker:
+  stage: deploy
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - echo "Building Docker images"
+    - for tech in air-to-air-mesh neuro-fcc self-adaptive-rotor-blades cold-jet local-gravity-field-navigation predictive-airflow-engine self-healing-avionics-bios vortex-shield air-swarm-os star-nav-core; do
+        if [ -d "$tech" ]; then
+          echo "Building Docker image for $tech"
+          docker build -t $CI_REGISTRY_IMAGE/$tech:$CI_COMMIT_SHA $tech/
+          docker push $CI_REGISTRY_IMAGE/$tech:$CI_COMMIT_SHA
+        fi
+      done
+  only:
+    - main
+    - develop
+
+deploy:staging:
+  stage: deploy
+  image: ubuntu:22.04
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y openssh-client
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan $STAGING_SERVER >> ~/.ssh/known_hosts
+  script:
+    - echo "Deploying to staging environment"
+    - scp -r build/* $STAGING_USER@$STAGING_SERVER:/opt/meta-repo-architecture/staging/
+    - ssh $STAGING_USER@$STAGING_SERVER "cd /opt/meta-repo-architecture/staging && ./deploy-staging.sh"
+  environment:
+    name: staging
+    url: https://staging.meta-repo-architecture.org
+  only:
+    - develop
+
+deploy:production:
+  stage: deploy
+  image: ubuntu:22.04
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y openssh-client
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan $PRODUCTION_SERVER >> ~/.ssh/known_hosts
+  script:
+    - echo "Deploying to production environment"
+    - scp -r build/* $PRODUCTION_USER@$PRODUCTION_SERVER:/opt/meta-repo-architecture/production/
+    - ssh $PRODUCTION_USER@$PRODUCTION_SERVER "cd /opt/meta-repo-architecture/production && ./deploy-production.sh"
+  environment:
+    name: production
+    url: https://meta-repo-architecture.org
+  when: manual
+  only:
+    - main
+
+# Release stage - Create releases
+release:create:
+  stage: release
+  image: ubuntu:22.04
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y curl jq
+  script:
+    - echo "Creating release"
+    - VERSION=$(git describe --tags --abbrev=0)
+    - DESCRIPTION="Meta-repo-architecture $VERSION - 10 Revolutionary Aviation Technologies"
+    
+    # Create release assets
+    - mkdir -p release-assets
+    - for tech in air-to-air-mesh neuro-fcc self-adaptive-rotor-blades cold-jet local-gravity-field-navigation predictive-airflow-engine self-healing-avionics-bios vortex-shield air-swarm-os star-nav-core; do
+        if [ -d "$tech" ]; then
+          tar -czf release-assets/$tech-$VERSION.tar.gz $tech/
+        fi
+      done
+    
+    # Create GitHub release
+    - |
+      curl -X POST \
+        -H "Authorization: token $GITHUB_TOKEN" \
+        -H "Accept: application/vnd.github.v3+json" \
+        https://api.github.com/repos/$CI_PROJECT_NAME/releases \
+        -d "{
+          \"tag_name\": \"$VERSION\",
+          \"target_commitish\": \"$CI_COMMIT_SHA\",
+          \"name\": \"$VERSION\",
+          \"body\": \"$DESCRIPTION\",
+          \"draft\": false,
+          \"prerelease\": false
+        }"
+  artifacts:
+    paths:
+      - release-assets/
+    expire_in: 1 month
+  only:
+    - tags
+
+# Quality gate - Final quality checks
+quality:code_quality:
+  stage: deploy
+  image: sonarsource/sonar-scanner-cli:latest
+  script:
+    - echo "Running SonarQube analysis"
+    - sonar-scanner \
+        -Dsonar.projectKey=$CI_PROJECT_NAME \
+        -Dsonar.sources=. \
+        -Dsonar.host.url=$SONAR_HOST_URL \
+        -Dsonar.login=$SONAR_TOKEN \
+        -Dsonar.coverage.exclusions="**/test/**" \
+        -Dsonar.cpd.exclusions="**/test/**"
+  allow_failure: true
+  only:
+    - main
+    - develop
+    - merge_requests
+
+# Cleanup stage - Clean up resources
+cleanup:
+  stage: deploy
+  image: ubuntu:22.04
+  script:
+    - echo "Cleaning up old artifacts"
+    - find . -name "*.log" -mtime +7 -delete
+    - find . -name "*.tmp" -mtime +7 -delete
+    - docker system prune -f
+  when: always
+  only:
+    - main
+    - develop
+
+# Notification stage - Send notifications
+notify:success:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache curl
+  script:
+    - echo "Pipeline succeeded"
+    - |
+      curl -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"text\":\"✅ Pipeline succeeded for $CI_PROJECT_NAME ($CI_COMMIT_REF_NAME)\"}" \
+        $SLACK_WEBHOOK_URL
+  when: on_success
+  only:
+    - main
+    - develop
+
+notify:failure:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache curl
+  script:
+    - echo "Pipeline failed"
+    - |
+      curl -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"text\":\"❌ Pipeline failed for $CI_PROJECT_NAME ($CI_COMMIT_REF_NAME). Check $CI_PIPELINE_URL\"}" \
+        $SLACK_WEBHOOK_URL
+  when: on_failure
+  only:
+    - main
+    - develop
+
+# Include templates
+include:
+  - template: Security/Dependency-Scanning.gitlab-ci.yml
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Container-Scanning.gitlab-ci.yml
+  - template: Code-Quality.gitlab-ci.yml
+  - template: Jobs/Build.gitlab-ci.yml
+  - template: Jobs/Test.gitlab-ci.yml
+  - template: Jobs/Deploy.gitlab-ci.yml
+
+# Cache configuration
+cache:
+  paths:
+    - build/
+    - .cmake/
+    - .sonar/cache/
+  key: "$CI_COMMIT_REF_SLUG"
+
+# Rules for pipeline execution
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_TAG
+
+# Environment variables
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2"
+  GRADLE_USER_HOME: "${CI_PROJECT_DIR}/.gradle"
+
+# Services
+services:
+  - name: docker:dind
+    command: ["--tls=false"]
+
+# Default settings
+default:
+  interruptible: true
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+  timeout: 2h
