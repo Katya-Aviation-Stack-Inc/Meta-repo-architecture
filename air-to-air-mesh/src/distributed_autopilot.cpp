@@ -24,8 +24,8 @@ public:
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         
         // In a real implementation, this would send via actual RF hardware
-        std::cout << "Transmitted packet: " << packet.sequence_number 
-                  << " from " << packet.source_id 
+        std::cout << "Transmitted packet: " << packet.sequence_number
+                  << " from " << packet.source_id
                   << " to " << packet.destination_id << std::endl;
         return true;
     }
@@ -47,6 +47,15 @@ public:
     
     bool is_connected() const override {
         return connected_;
+    }
+    
+    void set_frequency(double frequency_mhz) override {
+        frequency_ = frequency_mhz;
+        std::cout << "RF Transceiver frequency set to " << frequency_mhz << " MHz" << std::endl;
+    }
+    
+    double get_frequency() const override {
+        return frequency_;
     }
 
 private:

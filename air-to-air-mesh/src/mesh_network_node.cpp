@@ -77,7 +77,29 @@ void MeshNetworkNode::process_incoming_packets() {
                 case PacketType::HEARTBEAT:
                     // Update last seen time for source aircraft
                     break;
+                case PacketType::TRAFFIC_MANAGEMENT_ZONE:
+                    handle_traffic_zone(packet);
+                    break;
+                case PacketType::WEATHER_UPDATE:
+                    handle_weather_update(packet);
+                    break;
+                case PacketType::ROUTE_SHARING:
+                    handle_route_sharing(packet);
+                    break;
+                case PacketType::SWARM_COORDINATION:
+                    handle_swarm_coordination(packet);
+                    break;
+                case PacketType::PRIORITY_REQUEST:
+                    handle_priority_request(packet);
+                    break;
+                case PacketType::CLEARANCE_ACK:
+                    handle_clearance_ack(packet);
+                    break;
                 default:
+                    // Forward unknown packets
+                    if (packet.ttl > 1) {
+                        forward_packet(packet);
+                    }
                     break;
             }
         }
@@ -241,6 +263,234 @@ double MeshNetworkNode::calculate_distance(const AircraftPosition& pos1, const A
     double dy = pos1.longitude - pos2.longitude;
     double dz = pos1.altitude - pos2.altitude;
     return std::sqrt(dx*dx + dy*dy + dz*dz) * 111000; // Rough conversion to meters
+}
+
+// New implementation methods
+
+bool MeshNetworkNode::broadcast_traffic_zone(const TrafficManagementZone& zone) {
+    MeshPacket packet = create_mesh_packet(
+        static_cast<uint8_t>(PacketType::TRAFFIC_MANAGEMENT_ZONE),
+        0xFFFFFFFF,  // Broadcast
+        std::vector<uint8_t>()
+    );
+    
+    // Serialize zone data
+    packet.payload.resize(sizeof(TrafficManagementZone));
+    std::memcpy(packet.payload.data(), &zone, sizeof(TrafficManagementZone));
+    
+    return transceiver_->transmit(packet);
+}
+
+bool MeshNetworkNode::share_route(const std::vector<RouteSegment>& route) {
+    MeshPacket packet = create_mesh_packet(
+        static_cast<uint8_t>(PacketType::ROUTE_SHARING),
+        0xFFFFFFFF,  // Broadcast to all
+        std::vector<uint8_t>()
+    );
+    
+    // Serialize route data
+    size_t route_size = route.size() * sizeof(RouteSegment);
+    packet.payload.resize(sizeof(size_t) + route_size);
+    
+    // First store the number of segments
+    size_t route_count = route.size();
+    std::memcpy(packet.payload.data(), &route_count, sizeof(size_t));
+    
+    // Then store the route segments
+    std::memcpy(packet.payload.data() + sizeof(size_t), route.data(), route_size);
+    
+    return transceiver_->transmit(packet);
+}
+
+bool MeshNetworkNode::send_weather_update(const WeatherUpdate& weather) {
+    MeshPacket packet = create_mesh_packet(
+        static_cast<uint8_t>(PacketType::WEATHER_UPDATE),
+        0xFFFFFFFF,  // Broadcast
+        std::vector<uint8_t>()
+    );
+    
+    // Serialize weather data
+    packet.payload.resize(sizeof(WeatherUpdate));
+    std::memcpy(packet.payload.data(), &weather, sizeof(WeatherUpdate));
+    
+    return transceiver_->transmit(packet);
+}
+
+bool MeshNetworkNode::request_priority_clearance(uint32_t priority_level) {
+    MeshPacket packet = create_mesh_packet(
+        static_cast<uint8_t>(PacketType::PRIORITY_REQUEST),
+        0xFFFFFFFF,  // Broadcast to all
+        std::vector<uint8_t>()
+    );
+    
+    // Serialize priority level
+    packet.payload.resize(sizeof(uint32_t));
+    std::memcpy(packet.payload.data(), &priority_level, sizeof(uint32_t));
+    
+    return transceiver_->transmit(packet);
+}
+
+void MeshNetworkNode::set_frequency_band(double frequency_mhz) {
+    transceiver_->set_frequency(frequency_mhz);
+}
+
+double MeshNetworkNode::get_current_frequency() const {
+    return transceiver_->get_frequency();
+}
+
+std::vector<TrafficManagementZone> MeshNetworkNode::get_local_traffic_zones() const {
+    return traffic_zones_;
+}
+
+std::vector<WeatherUpdate> MeshNetworkNode::get_local_weather() const {
+    return weather_updates_;
+}
+
+bool MeshNetworkNode::establish_swarm_network(const std::vector<uint32_t>& participant_ids) {
+    swarm_participants_ = participant_ids;
+    
+    // Send swarm coordination packet to all participants
+    MeshPacket packet = create_mesh_packet(
+        static_cast<uint8_t>(PacketType::SWARM_COORDINATION),
+        0xFFFFFFFF,  // Broadcast to all
+        std::vector<uint8_t>()
+    );
+    
+    // Serialize participant list
+    size_t participant_count = participant_ids.size();
+    packet.payload.resize(sizeof(size_t) + participant_count * sizeof(uint32_t));
+    
+    // Store participant count
+    std::memcpy(packet.payload.data(), &participant_count, sizeof(size_t));
+    
+    // Store participant IDs
+    std::memcpy(packet.payload.data() + sizeof(size_t),
+                participant_ids.data(),
+                participant_count * sizeof(uint32_t));
+    
+    return transceiver_->transmit(packet);
+}
+
+bool MeshNetworkNode::send_swarm_command(uint32_t command_type, const std::vector<uint8_t>& data) {
+    if (swarm_participants_.empty()) {
+        return false;
+    }
+    
+    MeshPacket packet = create_mesh_packet(
+        static_cast<uint8_t>(PacketType::SWARM_COORDINATION),
+        0xFFFFFFFF,  // Broadcast to swarm participants
+        std::vector<uint8_t>()
+    );
+    
+    // Serialize command with data
+    size_t header_size = 2 * sizeof(uint32_t); // command_type + data_size
+    packet.payload.resize(header_size + data.size());
+    
+    // Store command type and data size
+    std::memcpy(packet.payload.data(), &command_type, sizeof(uint32_t));
+    size_t data_size = data.size();
+    std::memcpy(packet.payload.data() + sizeof(uint32_t), &data_size, sizeof(size_t));
+    
+    // Store command data
+    if (!data.empty()) {
+        std::memcpy(packet.payload.data() + header_size, data.data(), data.size());
+    }
+    
+    return transceiver_->transmit(packet);
+}
+
+// New packet handlers
+
+void MeshNetworkNode::handle_traffic_zone(const MeshPacket& packet) {
+    if (packet.payload.size() >= sizeof(TrafficManagementZone)) {
+        TrafficManagementZone zone;
+        std::memcpy(&zone, packet.payload.data(), sizeof(TrafficManagementZone));
+        
+        // Add or update zone
+        auto it = std::find_if(traffic_zones_.begin(), traffic_zones_.end(),
+            [&zone](const TrafficManagementZone& existing) {
+                return existing.zone_id == zone.zone_id;
+            });
+        
+        if (it != traffic_zones_.end()) {
+            *it = zone; // Update existing
+        } else {
+            traffic_zones_.push_back(zone); // Add new
+        }
+        
+        std::cout << "Received traffic management zone " << zone.zone_id << std::endl;
+    }
+}
+
+void MeshNetworkNode::handle_weather_update(const MeshPacket& packet) {
+    if (packet.payload.size() >= sizeof(WeatherUpdate)) {
+        WeatherUpdate weather;
+        std::memcpy(&weather, packet.payload.data(), sizeof(WeatherUpdate));
+        weather_updates_.push_back(weather);
+        std::cout << "Received weather update for location" << std::endl;
+    }
+}
+
+void MeshNetworkNode::handle_route_sharing(const MeshPacket& packet) {
+    if (packet.payload.size() >= sizeof(size_t)) {
+        size_t route_count;
+        std::memcpy(&route_count, packet.payload.data(), sizeof(size_t));
+        
+        if (packet.payload.size() >= sizeof(size_t) + route_count * sizeof(RouteSegment)) {
+            std::vector<RouteSegment> route(route_count);
+            std::memcpy(route.data(),
+                       packet.payload.data() + sizeof(size_t),
+                       route_count * sizeof(RouteSegment));
+            
+            shared_routes_.push_back(route);
+            std::cout << "Received shared route with " << route_count << " segments" << std::endl;
+        }
+    }
+}
+
+void MeshNetworkNode::handle_swarm_coordination(const MeshPacket& packet) {
+    std::cout << "Received swarm coordination from aircraft " << packet.source_id << std::endl;
+    // TODO: Implement swarm coordination logic
+}
+
+void MeshNetworkNode::handle_priority_request(const MeshPacket& packet) {
+    if (packet.payload.size() >= sizeof(uint32_t)) {
+        uint32_t priority_level;
+        std::memcpy(&priority_level, packet.payload.data(), sizeof(uint32_t));
+        std::cout << "Received priority request (level " << priority_level << ") from aircraft "
+                  << packet.source_id << std::endl;
+        // TODO: Implement priority handling logic
+    }
+}
+
+void MeshNetworkNode::handle_clearance_ack(const MeshPacket& packet) {
+    std::cout << "Received clearance acknowledgment from aircraft " << packet.source_id << std::endl;
+    // TODO: Implement clearance acknowledgment handling
+}
+
+bool MeshNetworkNode::forward_packet(const MeshPacket& packet) {
+    // Decrement TTL and forward
+    MeshPacket forwarded_packet = packet;
+    if (forwarded_packet.ttl > 0) {
+        forwarded_packet.ttl--;
+        forwarded_packet.path_history.push_back(aircraft_id_);
+        return transceiver_->transmit(forwarded_packet);
+    }
+    return false;
+}
+
+MeshPacket MeshNetworkNode::create_mesh_packet(uint8_t packet_type, uint32_t destination_id,
+                                               const std::vector<uint8_t>& payload) {
+    MeshPacket packet;
+    packet.source_id = aircraft_id_;
+    packet.destination_id = destination_id;
+    packet.sequence_number = sequence_number_++;
+    packet.packet_type = packet_type;
+    packet.priority = 0;  // Default priority
+    packet.ttl = 10;       // Default time to live
+    packet.payload = payload;
+    packet.timestamp = std::chrono::system_clock::now();
+    return packet;
 }
 
 } // namespace aamn
