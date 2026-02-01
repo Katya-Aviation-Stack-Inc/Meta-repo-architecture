@@ -29,6 +29,9 @@
 // Vortex Shield System
 #include "vortex_shield/vortex_shield.h"
 
+// Integrated Aviation System
+#include "integrated_aviation_system.h"
+
 // Air Swarm OS
 #include "air_swarm/air_swarm_os.h"
 
